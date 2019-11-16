@@ -1,0 +1,284 @@
+<!doctype html>
+<html>
+<head>
+	<style>
+		#game_canvas {
+			position: fixed;
+			width: 100vw;
+			height: 100vh;
+			top: 0vh;
+			left: 0vw;
+			background-color: #ffffff;
+		}
+
+		/* #fps_counter {
+			position: fixed;
+			width: 5vw;
+			height: 5vh;
+			top: 0vh;
+			left: 45vw;
+			background-color: #ffffff;
+			color: black;
+			font-size: 25px;
+			text-align: center;
+		} */
+
+		#score_counter {
+			position: fixed;
+			width: 15vw;
+			height: 5vh;
+			top: 0vh;
+			left: 0vw;
+			background-color: #ffffff;
+			color: black;
+			font-size: 25px;
+			text-align: center;
+			border-radius: 5px;
+		}
+
+		#next_color {
+			position: fixed;
+			width: 15vw;
+			height: 5vh;
+			top: 0vh;
+			right: 0vw;
+			background-color: #ffffff;
+			color: black;
+			font-size: 25px;
+			text-align: center;
+			border-radius: 5px;
+		}
+	</style>
+	<title>SUPERJEUX</title>
+</head>
+<body>
+	<canvas id="game_canvas"></canvas>
+	<div id="score_counter">Score : 0</div>
+	<div id="fps_counter">1000</div>
+	<div id="next_color"> Next Color</div>
+</body>
+<script src="three/build/three.js"></script>
+<script src="SpaceControls.js"></script>
+<script type="text/javascript">
+
+	// Create a variable for 3D world
+	let scene = null;
+	// Create avriable for camera
+	let camera = null;
+	// Create variable for Three.js renderer
+	let renderer = null;
+
+	// Create time variables for controls and fps display
+	let fps = 0;
+	let last_time = 0;
+	let delta_time = 0;
+
+	let rotationDirection = "none";
+
+	// Create variables for cube & sphere
+	let cube = null;
+	let sphere = null;
+	let sphereColor = new THREE.Color();
+	let nextSphereColor = new THREE.Color();
+
+	let colorsNext = ["orange", "yellow", "white", "green", "blue", "red"];
+	let colors = [0xffa500, 0xffff00, 0xffffff, 0x008000, 0x0000ff, 0xff0000];
+	let falling = false;
+	let sphereSpeed = 0.5;
+	let score = 0;
+
+	let cpt = 0;
+	let raycaster = new THREE.Raycaster();
+
+	// Run the code
+	init();
+	animation();
+
+	// Function that initialize global variables
+	function init() {
+
+		// Create the 3D world
+		scene = new THREE.Scene();
+
+		// Create the camera perspective
+		camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.01, 100000);
+
+		// Create WebGL renderer
+		renderer = new THREE.WebGLRenderer({
+				canvas: document.getElementById("game_canvas"),
+				sortObjects: true,
+				antialias: true,
+				localClippingEnabled: false,
+				powerPreference: "high-performance",
+				logarithmicDepthBuffer: true,
+				precision: "highp"});
+		renderer.setPixelRatio(1.0);
+		renderer.setSize(window.innerWidth * 1.0, window.innerHeight * 1.0);
+		renderer.setClearColor(new THREE.Color(0xff0088ff), 0.0);
+
+		// Add camera the 3D world
+		scene.add(camera);
+		// Move the camera back 
+		camera.position.set(700, 1000, -1800);
+
+		// Make the camera look at the cube
+		camera.lookAt(new THREE.Vector3(0, 800, 0));
+
+		// Create geometry for the cube
+		let geometryCube = new THREE.BoxGeometry(1000, 1000, 1000, 1, 1, 1);
+
+		// Color cube faces
+		let materialCube_1 = new THREE.MeshBasicMaterial({wireframe: false, color: colors[0]});
+		let materialCube_2 = new THREE.MeshBasicMaterial({wireframe: false, color: colors[1]});
+		let materialCube_3 = new THREE.MeshBasicMaterial({wireframe: false, color: colors[2]});
+		let materialCube_4 = new THREE.MeshBasicMaterial({wireframe: false, color: colors[3]});
+		let materialCube_5 = new THREE.MeshBasicMaterial({wireframe: false, color: colors[4]});
+		let materialCube_6 = new THREE.MeshBasicMaterial({wireframe: false, color: colors[5]});
+		let materialsCube = [materialCube_1, materialCube_2, materialCube_3, materialCube_4, materialCube_5, materialCube_6];
+
+		for(let i = 0; i < geometryCube.faces.length; i++) {
+				geometryCube.faces[i].color.setRGB(materialsCube[i]);
+		}
+
+		// Initialize the cube and add it to the 3D world
+		cube = new THREE.Mesh(geometryCube, materialsCube);
+		// cube.position.set(0, 0, 0);
+		scene.add(cube);
+
+		// Add color lines on each faces
+		for(i = 0; i < geometryCube.faces.length; i++) {
+			let material = new THREE.LineBasicMaterial( { color: colors[geometryCube.faces[i].materialIndex]} );
+			let geometry = new THREE.Geometry();
+			geometry.vertices.push(new THREE.Vector3(0, 0, 0));
+			if(geometryCube.faces[i]) {
+				geometry.vertices.push(new THREE.Vector3(	geometryCube.faces[i].normal.x * 90000, 
+																									geometryCube.faces[i].normal.y * 90000, 
+																									geometryCube.faces[i].normal.z * 90000));
+			}
+			let line = new THREE.Line(geometry, material);
+			cube.add(line);
+		}
+		
+		// Initialize and add a sphere to the 3D world
+		createSphere();
+
+		// Unable keyboard controls
+		SpaceControls();
+	}
+
+	// Function that is a loop to make objects move, update controls and display 3D world
+	function animation() {
+
+		// Recalculate time variables and fps
+		delta_time = Date.now() - last_time;
+		last_time = Date.now();
+		fps = parseInt(1000 / delta_time);
+		
+		// Rotate the cube by listenning keybord
+		if(rotationDirection == "-y") {
+			if(cpt > 0) {
+				cube.rotateOnWorldAxis(new THREE.Vector3(0, 1, 0), 0.1 * Math.PI/2);
+				cpt--;
+			}
+			else {
+				rotationDirection = "none";
+			}
+		}
+
+		if(rotationDirection == "y") {
+			if(cpt > 0) {
+				cube.rotateOnWorldAxis(new THREE.Vector3(0, -1, 0), 0.1 * Math.PI/2);
+				cpt--;
+			}
+			else {
+				rotationDirection = "none";
+			}
+		}
+
+		if(rotationDirection == "x") {
+			if(cpt > 0) {
+				cube.rotateOnWorldAxis(new THREE.Vector3(1, 0, 0), 0.1 * Math.PI/2);
+				cpt--;
+			}
+			else {
+				rotationDirection = "none";
+			}
+		}
+
+		if(rotationDirection == "-x") {
+			if(cpt > 0) {
+				cube.rotateOnWorldAxis(new THREE.Vector3(-1, 0, 0), 0.1 * Math.PI/2);
+				cpt--;
+			}
+			else {
+				rotationDirection = "none";
+			}
+		}
+
+		// Detect when the sphere hit the cube
+		raycaster.ray.origin.copy(sphere.position);
+		raycaster.ray.direction = new THREE.Vector3(0, -1, 0);
+		raycaster.ray.near = 0;
+		raycaster.ray.far = 1;
+		let results = raycaster.intersectObject(cube);
+	
+		// Test if the top cube face and the the sphere have the same color
+		if(results.length > 0 && results[0].distance <= 25) {
+			let test = cube.material[cube.geometry.faces[results[0].faceIndex].materialIndex].color.getHexString();
+			if(test == sphereColor.getHexString()) {
+				score += 1;
+				sphereSpeed += 0.03;
+				createSphere();
+			} else {
+				falling = false;
+				createSphere();
+			}
+		}
+
+		// Make the sphere fall on the cube
+		if(falling == true && sphere.position.y > 511) {
+			sphere.translateOnAxis(new THREE.Vector3(0, -1, 0), sphereSpeed * delta_time);
+		}
+
+		// Add fps in the view (fps div is commented)
+		document.getElementById("fps_counter").innerHTML = fps;
+
+		// Add score in the view
+		document.getElementById("score_counter").innerHTML = "Score : " + score;
+
+		// Add next sphere color in the view
+		document.getElementById("next_color").style.backgroundColor = colorsNext[nextSphereColor];
+
+		// Render visuals
+		render();
+
+		// Call the web browser to refresh window and run animation again
+		requestAnimationFrame(animation);
+	}
+
+	// Draw the 3D world and camera into canvas
+	function render() {
+		renderer.render(scene, camera);
+	}
+
+	// Function that create sphere
+	function createSphere() {
+		scene.remove(sphere);
+		sphereColor.set(colors[nextSphereColor]);
+		let geometrySphere = new THREE.SphereGeometry(100, 32, 32);
+		let materialSphere = new THREE.MeshBasicMaterial({color: sphereColor});
+		sphere = new THREE.Mesh(geometrySphere, materialSphere);
+		sphere.position.set(0, 2200, 0);
+		scene.add(sphere);
+
+		// Determine next sphere color
+		nextSphereColor = getRandomInt(6);
+	}
+
+	// Function that randomely pick a number between 0 and 5
+	function getRandomInt(max) {
+		return Math.floor(Math.random() * Math.floor(max));
+	}
+
+</script>
+</html>
